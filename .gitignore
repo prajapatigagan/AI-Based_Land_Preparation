@@ -1,0 +1,33 @@
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Environment Variables & Secrets
+.env
+.env.local
+
+# Node.js / Web
+node_modules/
+dist/
+build/
+
+# IDE & Code Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vector Databases & Local Storage
+*.chromadb/
+chroma_db/
+*.sqlite3
+
+# Logs & OS Files
+*.log
+.DS_Store
+Thumbs.db
