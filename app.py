@@ -9,12 +9,19 @@ from tools import UNIT_TO_ACRE, to_acres, rule_shortlist
 from vision import analyze_land, merge_analyses
 from recommender import recommend
 from pdf_report import build_pdf
+from chatbot import build_context, stream_answer
 
 st.set_page_config(page_title="Land Prep Advisor", page_icon="🚜", layout="wide")
 
 SOILS = ["black", "clay", "loam", "sandy"]
 CROPS = ["paddy", "wheat", "maize", "soybean", "cotton", "sugarcane", "mustard"]
 MAX_PHOTOS = 4
+SUGGESTIONS = [
+    "Ye equipment kyun chune gaye?",
+    "Time estimate kaise nikla?",
+    "Sabse pehle kaunsa kaam karu?",
+    "Warnings ka kya matlab hai?",
+]
 
 
 def clean_step(s: str) -> str:
@@ -35,6 +42,89 @@ def analyze_uploaded(f):
             os.remove(tmp.name)
         except OSError:
             pass
+
+
+def generate(uploaded, soil, crop, size, unit):
+    """Poora pipeline chalao aur result st.session_state['report'] me rakho."""
+    st.session_state.pop("report", None)
+    st.session_state["chat"] = []
+
+    if not uploaded:
+        st.error("Pehle zameen ki photo upload karo.")
+        return
+    if not crop.strip():
+        st.error("Crop ka naam daalo.")
+        return
+
+    try:
+        acres = to_acres(size, unit)
+
+        with st.spinner(f"{len(uploaded)} photo analyze ho rahi hain..."):
+            analysis = merge_analyses([analyze_uploaded(f) for f in uploaded])
+
+        if not analysis.image_quality_ok or analysis.confidence.lower() == "low":
+            st.warning(
+                "Image clear nahi hai ya khet ki nahi lag rahi. "
+                "Daylight me poore plot ki dusri photo upload karo."
+            )
+            return
+
+        with st.spinner("Recommendation ban rahi hai..."):
+            shortlist = rule_shortlist(analysis, soil, acres, crop)
+            result = recommend(analysis, shortlist, soil, acres, crop)
+
+        inputs = {"Soil": soil, "Crop": crop, "Plot size (acres)": acres}
+        buf = BytesIO()
+        build_pdf(buf, inputs, analysis, result)
+
+        st.session_state["report"] = {
+            "acres": acres,
+            "analysis": analysis,
+            "result": result,
+            "pdf": buf.getvalue(),
+            "context": build_context(inputs, analysis, shortlist, result),
+        }
+    except ValueError as e:
+        st.error(str(e))
+    except Exception as e:
+        st.error(f"Kuch gadbad hui: {e}")
+
+
+def render_report(rep):
+    analysis, result, acres = rep["analysis"], rep["result"], rep["acres"]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Plot", f"{acres} acre")
+    m2.metric("Tractor", result.tractor_hp_range)
+    m3.metric("Est. time", f"{result.estimated_time_hours} hr")
+    m4.metric("Confidence", result.confidence.capitalize())
+
+    for w in result.warnings:
+        st.warning(w)
+
+    with st.expander("Photo se kya dikha (Land analysis)", expanded=True):
+        a1, a2 = st.columns(2)
+        a1.write(f"**Terrain:** {analysis.terrain}")
+        a1.write(f"**Vegetation:** {analysis.vegetation} ({analysis.vegetation_density})")
+        a2.write(f"**Wetness:** {analysis.surface_wetness}")
+        a2.write(f"**Obstacles:** {', '.join(analysis.obstacles) or 'none'}")
+
+    st.markdown("#### Equipment")
+    st.write("  ".join(f"`{e}`" for e in result.equipment) or "—")
+
+    st.markdown("#### Steps")
+    for i, s in enumerate(result.steps, 1):
+        st.markdown(f"**{i}.** {clean_step(s)}")
+
+    with st.expander("Reasoning"):
+        st.write(result.reasoning)
+
+    st.download_button(
+        "Report download (PDF)",
+        rep["pdf"],
+        file_name="land_recommendation.pdf",
+        mime="application/pdf",
+    )
 
 
 st.title("🚜 AI Land Preparation Advisor")
@@ -74,77 +164,47 @@ with left:
 # ---------------- RIGHT: results ----------------
 with right:
     st.subheader("Result")
+    if run:
+        generate(uploaded, soil, crop, size, unit)
 
-    if not run:
+    report = st.session_state.get("report")
+    if report:
+        render_report(report)
+    elif not run:
         st.info("Left side me details bhar ke **Recommend karo** dabao.")
-    elif not uploaded:
-        st.error("Pehle zameen ki photo upload karo.")
-    elif not crop.strip():
-        st.error("Crop ka naam daalo.")
-    else:
+
+# ---------------- CHATBOT ----------------
+st.divider()
+st.subheader("💬 Report ke baare me kuch bhi pucho")
+
+report = st.session_state.get("report")
+chat = st.session_state.setdefault("chat", [])
+
+if not report:
+    st.caption("Pehle recommendation generate karo, phir yahan sawal pooch sakte ho.")
+else:
+    cols = st.columns(len(SUGGESTIONS))
+    for col, q in zip(cols, SUGGESTIONS):
+        if col.button(q, use_container_width=True):
+            st.session_state["pending_q"] = q
+
+    for m in chat:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+prompt = st.chat_input("Jaise: Rotavator ki jagah kya use kar sakte hain?", disabled=not report)
+if not prompt:
+    prompt = st.session_state.pop("pending_q", None)
+
+if prompt and report:
+    history = list(chat)
+    chat.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    with st.chat_message("assistant"):
         try:
-            acres = to_acres(size, unit)
-
-            with st.spinner(f"{len(uploaded)} photo analyze ho rahi hain..."):
-                analysis = merge_analyses([analyze_uploaded(f) for f in uploaded])
-
-            if not analysis.image_quality_ok or analysis.confidence.lower() == "low":
-                st.warning(
-                    "Image clear nahi hai ya khet ki nahi lag rahi. "
-                    "Daylight me poore plot ki dusri photo upload karo."
-                )
-            else:
-                with st.spinner("Recommendation ban rahi hai..."):
-                    shortlist = rule_shortlist(analysis, soil, acres, crop)
-                    result = recommend(analysis, shortlist, soil, acres, crop)
-
-                # --- summary metrics ---
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Plot", f"{acres} acre")
-                m2.metric("Tractor", result.tractor_hp_range)
-                m3.metric("Est. time", f"{result.estimated_time_hours} hr")
-                m4.metric("Confidence", result.confidence.capitalize())
-
-                # --- warnings ---
-                for w in result.warnings:
-                    st.warning(w)
-
-                # --- land analysis ---
-                with st.expander("Photo se kya dikha (Land analysis)", expanded=True):
-                    a1, a2 = st.columns(2)
-                    a1.write(f"**Terrain:** {analysis.terrain}")
-                    a1.write(f"**Vegetation:** {analysis.vegetation} ({analysis.vegetation_density})")
-                    a2.write(f"**Wetness:** {analysis.surface_wetness}")
-                    a2.write(f"**Obstacles:** {', '.join(analysis.obstacles) or 'none'}")
-
-                # --- equipment ---
-                st.markdown("#### Equipment")
-                st.write("  ".join(f"`{e}`" for e in result.equipment) or "—")
-
-                # --- steps ---
-                st.markdown("#### Steps")
-                for i, s in enumerate(result.steps, 1):
-                    st.markdown(f"**{i}.** {clean_step(s)}")
-
-                # --- reasoning ---
-                with st.expander("Reasoning"):
-                    st.write(result.reasoning)
-
-                # --- PDF download ---
-                buf = BytesIO()
-                build_pdf(
-                    buf,
-                    {"Soil": soil, "Crop": crop, "Plot size (acres)": acres},
-                    analysis,
-                    result,
-                )
-                st.download_button(
-                    "Report download (PDF)",
-                    buf.getvalue(),
-                    file_name="land_recommendation.pdf",
-                    mime="application/pdf",
-                )
-        except ValueError as e:
-            st.error(str(e))
+            answer = st.write_stream(stream_answer(prompt, report["context"], history))
         except Exception as e:
-            st.error(f"Kuch gadbad hui: {e}")
+            answer = f"Jawab nahi mil paya: {e}"
+            st.error(answer)
+    chat.append({"role": "assistant", "content": answer})
