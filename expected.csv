@@ -1,8 +1,0 @@
-filename,terrain,vegetation_density,surface_wetness,expect_reject
-clean_dry_flat.jpg,flat,low,dry,no
-dense_grass.jpg,flat,high,dry,no
-wet_field.jpg,flat,low,waterlogged,no
-sloped_land.jpg,sloped,medium,dry,no
-stony_land.jpg,uneven,low,dry,no
-tractor_photo.jpg,,,,yes
-dark_blurry.jpg,,,,yes

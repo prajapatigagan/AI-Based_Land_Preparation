@@ -5,6 +5,7 @@ from tools import to_acres, rule_shortlist
 from vision import analyze_land
 from recommender import recommend
 from pdf_report import build_pdf
+from tractor_web import get_tractor_examples
 
 
 def main():
@@ -34,10 +35,11 @@ def main():
     shortlist = rule_shortlist(analysis, soil, acres, crop)
     result = recommend(analysis, shortlist, soil, acres, crop)
 
+    tractors = get_tractor_examples(result.tractor_hp_range)
     pdf_path = "land_report.pdf"
     build_pdf(pdf_path,
               {"Soil": soil, "Crop": crop, "Plot size (acres)": acres},
-              analysis, result)
+              analysis, result, tractors)
     print(f"PDF saved: {pdf_path}")
 
 
