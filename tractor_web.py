@@ -57,23 +57,38 @@ def get_tractor_examples(hp_range: str, limit: int = 4) -> TractorList:
         out.note = "Tractor examples unavailable (HP range samajh nahi aayi)."
         return out
     lo, hi = nums[0], nums[1]
+    mid = (lo + hi) // 2
 
     try:
+        # Range ki jagah specific HP values search karo (generic pages se bachne ke liye)
+        queries = [
+            f"{lo} HP tractor price India",
+            f"{mid} HP tractor price India",
+            f"{hi} HP tractor price India",
+            f"Mahindra Swaraj John Deere Sonalika {mid} HP tractor price",
+        ]
         hits, seen = [], set()
-        for q in (f"{lo}-{hi} HP tractor price India models", f"tractor {lo} to {hi} hp specifications price list India"):
-            for r in _search.invoke(q):
+        for q in queries:
+            try:
+                results = _search.invoke(q)
+            except Exception:
+                continue  # ek query fail hui to baaki chalne do
+            for r in results:
                 if r.get("link") and r["link"] not in seen:
                     seen.add(r["link"])
                     hits.append(r)
+        print(f"[tractor search: {len(hits)} results]")  # debug
+
         if not hits:
             out.note = "Web search se tractor examples nahi mile. Local dealer se confirm karein."
             return out
 
         text = "\n\n".join(
-            f"[{i}] {h.get('title','')}\n{h.get('snippet','')}\nURL: {h['link']}" for i, h in enumerate(hits)
+            f"[{i}] {h.get('title', '')}\n{h.get('snippet', '')[:300]}\nURL: {h['link']}"
+            for i, h in enumerate(hits)
         )
         res = _extractor.invoke(
-            f"Extract tractor models explicitly mentioned below with engine HP between {lo-2} and {hi+2}.\n"
+            f"Extract tractor models explicitly mentioned below with engine HP between {lo - 2} and {hi + 2}.\n"
             "Rules: use ONLY info present in the text; price_text only if a price is written there; "
             "source_url must be the URL of the snippet where you found it. Do not guess or invent.\n\n" + text
         )
@@ -90,6 +105,8 @@ def get_tractor_examples(hp_range: str, limit: int = 4) -> TractorList:
             out.append(d)
             if len(out) >= limit:
                 break
+
+        print(f"[tractor extracted: {len(out)}]")  # debug
 
         if not out:
             out.note = "Search snippets me clear tractor details nahi mile. Local dealer se poochhein."
