@@ -1,158 +1,131 @@
-import base64
-import io
 from datetime import datetime
 
-from PIL import Image
+from langchain_core.tools import tool
+from langchain_community.tools import DuckDuckGoSearchRun, WikipediaQueryRun
+from langchain_community.utilities import WikipediaAPIWrapper
 
-# ======================================================================
-# Image helper
-# ======================================================================
-def image_to_b64(path: str, max_side: int = 1024) -> str:
-    """Image resize + JPEG compress karke base64 string do."""
-    img = Image.open(path).convert("RGB")
-    img.thumbnail((max_side, max_side))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
-    return base64.b64encode(buf.getvalue()).decode()
+_search = DuckDuckGoSearchRun()
+_wiki = WikipediaQueryRun(
+    api_wrapper=WikipediaAPIWrapper(top_k_results=2, doc_content_chars_max=10000)
+)
 
 
-# ======================================================================
-# Unit converter
-# ======================================================================
-# Bigha ka size state/region ke hisaab se badalta hai, apne area ka value verify kar lena
-UNIT_TO_ACRE = {
-    "acre": 1.0,
-    "hectare": 2.471,
-    "bigha": 0.625,        # approx (UP pucca bigha)
-    "sqft": 1 / 43560,
-    "sqm": 1 / 4046.86,
-}
+@tool
+def search_tool(query: str) -> str:
+    """Search the web for current information."""
+    try:
+        return _search.invoke(query) or "No results found."
+    except Exception as e:
+        return f"Web search failed: {e}"
 
 
-def to_acres(value: float, unit: str = "acre") -> float:
-    factor = UNIT_TO_ACRE.get(unit.lower())
-    if factor is None:
-        raise ValueError(f"Unit '{unit}' supported nahi. Use: {list(UNIT_TO_ACRE)}")
-    return round(value * factor, 2)
+@tool
+def wiki_tool(query: str) -> str:
+    """Look up factual background information on Wikipedia."""
+    try:
+        return _wiki.invoke(query) or "No results found."
+    except Exception as e:
+        return f"Wikipedia lookup failed: {e}"
 
 
-# ======================================================================
-# Knowledge base  (STARTING VALUES - KVK / ICAR-CIAE se verify karke README me source likho)
-# ======================================================================
-CROP_TILLAGE = {
-    "wheat": "fine seedbed", "mustard": "fine seedbed",
-    "paddy": "puddling", "rice": "puddling",
-    "cotton": "deep ploughing + ridging",
-    "sugarcane": "deep ploughing + furrows",
-    "soybean": "medium tilth", "maize": "medium tilth",
-}
-
-SOIL_IMPLEMENT = {
-    "clay":  ["MB plough", "heavy disc harrow", "rotavator"],
-    "loam":  ["cultivator", "disc harrow", "rotavator"],
-    "sandy": ["light cultivator", "spring harrow", "leveller"],
-    "black": ["MB plough", "disc harrow", "cultivator"],
-}
-
-# Crop-specific extra implements (crop ka equipment par asli asar)
-CROP_EXTRA = {
-    "paddy":     ["rotavator", "puddler"],
-    "rice":      ["rotavator", "puddler"],
-    "sugarcane": ["ridger"],
-    "cotton":    ["ridger"],
-    "maize":     ["ridger"],
-    "wheat":     ["rotavator", "planker"],
-    "mustard":   ["rotavator", "planker"],
-}
-
-# Approx field capacity (acres per hour) per implement - time estimate ke liye
-IMPLEMENT_ACRES_PER_HR = {
-    "shredder/mulcher": 1.0,
-    "mb plough": 0.6,
-    "heavy disc harrow": 1.2,
-    "disc harrow": 1.5,
-    "cultivator": 2.0,
-    "light cultivator": 2.5,
-    "spring harrow": 2.5,
-    "rotavator": 1.0,
-    "puddler": 1.0,
-    "ridger": 1.5,
-    "planker": 3.0,
-    "leveller": 2.0,
-    "laser/land leveller": 1.5,
-}
-DEFAULT_ACRES_PER_HR = 1.0
-OVERHEAD_FACTOR = 1.15   # turning, setup, small stoppages
-
-
-def hp_range(acres: float) -> str:
-    if acres <= 2:
-        return "20-35 HP"
-    if acres <= 10:
-        return "35-50 HP"
-    return "50+ HP"
-
-
-def estimate_hours(equipment: list[str], acres: float) -> float:
-    """Time = sum(acres / acres_per_hour per implement) x overhead. Rule-based, LLM nahi."""
-    total = sum(
-        acres / IMPLEMENT_ACRES_PER_HR.get(e.lower(), DEFAULT_ACRES_PER_HR)
-        for e in equipment
-    )
-    return round(total * OVERHEAD_FACTOR, 1)
-
-
-# ======================================================================
-# Rule engine
-# ======================================================================
-def rule_shortlist(analysis, soil: str, acres: float, crop: str) -> dict:
-    """analysis = LandAnalysis object (duck typing, import ki zaroorat nahi)."""
-    soil_l, crop_l = soil.lower(), crop.lower()
-
-    equipment = list(SOIL_IMPLEMENT.get(soil_l, ["cultivator", "disc harrow"]))
-    pre_steps, warnings = [], []
-
-    # crop-specific implements
-    for e in CROP_EXTRA.get(crop_l, []):
-        if e not in equipment:
-            equipment.append(e)
-
-    # vegetation
-    if analysis.vegetation_density == "high" or analysis.vegetation == "bushes":
-        equipment.insert(0, "shredder/mulcher")
-        pre_steps.append("Clear heavy vegetation (shred/mulch)")
-
-    # obstacles
-    if analysis.obstacles:
-        warnings.append(f"Obstacles visible: {', '.join(analysis.obstacles)}. Remove before tillage.")
-
-    # wetness
-    if analysis.surface_wetness == "waterlogged" and crop_l not in ("paddy", "rice"):
-        warnings.append("Land waterlogged: wait for drying before ploughing.")
-
-    # terrain
-    if analysis.terrain != "flat":
-        equipment.append("laser/land leveller")
-
-    # crop-soil mismatch
-    if crop_l in ("paddy", "rice") and soil_l == "sandy":
-        warnings.append("Sandy soil drains fast; paddy needs water retention. Consider bunding/puddling carefully.")
-
-    return {
-        "candidate_equipment": equipment,
-        "tillage_goal": CROP_TILLAGE.get(crop_l, "standard tilth"),
-        "tractor_hp_range": hp_range(acres),
-        "pre_steps": pre_steps,
-        "rule_warnings": warnings,
-    }
-
-
-# ======================================================================
-# Output save
-# ======================================================================
-def save_to_txt(data: str, filename: str = "land_recommendations.txt") -> str:
+def save_to_txt(data: str, filename: str = "research_output.txt") -> str:
+    """Append research output to a text file with a timestamp."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    text = f"--- Land Recommendation ---\nTimestamp: {timestamp}\n\n{data}\n\n"
+    text = f"--- Research Output ---\nTimestamp: {timestamp}\n\n{data}\n\n"
+
     with open(filename, "a", encoding="utf-8") as f:
         f.write(text)
+
     return f"Data successfully saved to {filename}"
+
+# ---------------- Units ----------------
+UNIT_TO_ACRE = {"acre": 1.0, "hectare": 2.471, "bigha": 0.625, "guntha": 0.025}
+
+
+def to_acres(size: float, unit: str) -> float:
+    if unit not in UNIT_TO_ACRE:
+        raise ValueError(f"Unknown unit: {unit}")
+    if size is None or size <= 0:
+        raise ValueError("Plot size must be greater than 0.")
+    return round(size * UNIT_TO_ACRE[unit], 3)
+
+
+# ---------------- Rule engine (no CSV/SQL, sab code me) ----------------
+# Approx working speed (acre/hour). Local conditions ke hisaab se tune karna.
+IMPLEMENT_SPEED = {
+    "Mulcher": 1.2, "Disc plough": 1.0, "Mould board plough": 0.8,
+    "Cultivator": 1.8, "Disc harrow": 1.6, "Rotavator": 1.2, "Puddler": 1.2,
+    "Land leveller / scraper": 1.5, "Planker": 3.0,
+    "Seed drill": 3.0, "Planter": 2.5, "Ridger": 2.0,
+}
+TURNING_ALLOWANCE = 1.15  # turning + setup ke liye 15% extra
+
+
+def _hp_for_area(acres: float) -> str:
+    if acres <= 2:
+        return "25-35 HP"
+    if acres <= 5:
+        return "35-45 HP"
+    if acres <= 10:
+        return "45-55 HP"
+    return "55-75 HP"
+
+
+def rule_shortlist(analysis, soil: str, acres: float, crop: str) -> dict:
+    """Soil + crop + visible land condition se equipment shortlist. AI sirf order/explain karega."""
+    soil, crop_l = soil.lower(), crop.strip().lower()
+    paddy = crop_l in ("paddy", "rice")
+    heavy_soil = soil in ("black", "clay")
+    wet = analysis.surface_wetness
+    stones = analysis.stones_visible
+    veg, density = analysis.vegetation, analysis.vegetation_density
+    eq, notes = [], []
+
+    # 1. Primary tillage
+    if veg in ("shrubs", "trees") or density == "dense":
+        eq += ["Mulcher", "Disc plough"]
+        notes.append("Dense vegetation: clear stumps/roots manually before tillage.")
+    elif heavy_soil:
+        eq.append("Mould board plough")
+    else:
+        eq.append("Cultivator")
+
+    # 2. Secondary tillage
+    if stones:
+        eq.append("Disc harrow")
+        notes.append("Stones visible: rotavator avoid kiya gaya (blades kharab ho sakte hain).")
+    elif paddy and wet != "dry":
+        eq.append("Puddler")
+    else:
+        eq.append("Rotavator")
+
+    # 3. Leveling
+    if analysis.terrain in ("uneven", "gentle_slope"):
+        eq.append("Land leveller / scraper")
+    if analysis.terrain == "steep_slope":
+        notes.append("Steep slope: contour bunding karo aur heavy implements avoid karo.")
+    if paddy and "Puddler" not in eq:
+        eq.append("Puddler")
+    eq.append("Planker")
+
+    # 4. Sowing
+    if crop_l in ("wheat", "soybean", "mustard"):
+        eq.append("Seed drill")
+    elif crop_l in ("maize", "cotton"):
+        eq.append("Planter")
+    elif crop_l == "sugarcane":
+        eq.append("Ridger")
+
+    if wet == "waterlogged" and not paddy:
+        notes.append("Field waterlogged hai: pehle drainage karo, mitti workable hone par hi tillage.")
+    if heavy_soil and wet != "dry" and not paddy:
+        notes.append("Gili black/clay mitti me tillage se clods ban jate hain; thodi sukhne do.")
+
+    eq = list(dict.fromkeys(eq))  # duplicates hatao, order rakho
+    hours = sum(acres / IMPLEMENT_SPEED[e] for e in eq if e in IMPLEMENT_SPEED) * TURNING_ALLOWANCE
+    return {
+        "equipment": eq,
+        "tractor_hp_range": _hp_for_area(acres),
+        "estimated_time_hours": round(hours, 1),
+        "notes": notes,
+    }
