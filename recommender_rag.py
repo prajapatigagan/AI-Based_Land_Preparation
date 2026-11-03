@@ -57,7 +57,10 @@ def recommend(analysis, shortlist: dict, soil: str, acres: float, crop: str) -> 
         "Indian farmer, explain the reasoning, and list warnings (include every rule-engine note). Use the "
         "research notes to make steps and warnings specific, but never contradict the shortlist. Do NOT add "
         "equipment outside the shortlist and do NOT state tractor HP or hours (computed separately). "
-        "Do not invent facts. Lower the confidence if photo confidence is low or data is missing."
+        "Do not invent facts. Lower the confidence if photo confidence is low or data is missing. "
+        "Use implement names EXACTLY as in the shortlist; never mention implements outside it "
+        "(e.g. no harrowing if Disc harrow is not listed) and never describe an implement as something "
+        "it is not (a planker is a simple leveling plank, not laser-guided)."
     )
     try:
         out = _llm.invoke(prompt)

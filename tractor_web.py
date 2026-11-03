@@ -9,6 +9,7 @@ load_dotenv()
 from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
 from langchain_community.tools import DuckDuckGoSearchResults
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
 
 class TractorList(list):
@@ -29,7 +30,11 @@ class _Extract(BaseModel):
     tractors: list[_Tractor] = Field(default_factory=list)
 
 
-_search = DuckDuckGoSearchResults(output_format="list", num_results=6)
+_search = DuckDuckGoSearchResults(
+    api_wrapper=DuckDuckGoSearchAPIWrapper(region="in-en"),
+    output_format="list",
+    num_results=6,
+)
 _extractor = ChatGroq(
     model="openai/gpt-oss-120b", temperature=0, max_tokens=2000, reasoning_effort="low"
 ).with_structured_output(_Extract, method="json_schema")
