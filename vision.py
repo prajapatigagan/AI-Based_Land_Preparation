@@ -54,7 +54,7 @@ Reply with ONLY one JSON object (no markdown, no extra text) using exactly these
  "stones_visible": true/false,
  "obstacles": ["stumps", "boulders", ...],
  "confidence": "low" | "medium" | "high",
- "notes": "limits of image-only analysis"
+  "notes": "" (a short comment only if something is unclear, otherwise leave empty)
 }"""
 
 

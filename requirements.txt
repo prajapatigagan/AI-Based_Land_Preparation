@@ -6,6 +6,9 @@ requests
 beautifulsoup4
 python-dotenv
 pydantic
+numpy
+fastembed
+wikipedia
 langchain
 langchain-core
 langchain-community

@@ -4,7 +4,7 @@ import traceback
 
 from tools import to_acres, rule_shortlist, save_to_txt, UNIT_TO_ACRE
 from vision import analyze_land, merge_analyses
-from recommender import recommend
+from recommender_rag import recommend
 from tractor_web import get_tractor_examples
 from pdf_report import build_pdf
 

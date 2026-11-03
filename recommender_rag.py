@@ -7,6 +7,8 @@ load_dotenv()
 from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
 
+from agent import run_research
+
 
 class _LLMOut(BaseModel):
     equipment: list[str] = Field(description="Chosen equipment in WORKING ORDER, only names from the shortlist")
@@ -24,6 +26,8 @@ class Recommendation(BaseModel):
     confidence: str = "medium"
     tractor_hp_range: str = ""
     estimated_time_hours: float = 0.0
+    sources: list[str] = Field(default_factory=list)      # RAG se aaye URLs
+    tools_used: list[str] = Field(default_factory=list)   # agent ne kaun se tools chalaye
 
 
 _llm = ChatGroq(
@@ -34,16 +38,26 @@ _LEVEL = {"low": 0, "medium": 1, "high": 2}
 
 
 def recommend(analysis, shortlist: dict, soil: str, acres: float, crop: str) -> Recommendation:
+    # 1. Agent + RAG research (fail ho to bina research ke chalega)
+    notes, sources, tools_used = "", [], []
+    try:
+        notes, sources, tools_used = run_research(analysis, soil, acres, crop)
+    except Exception:
+        traceback.print_exc()
+        print("[Research agent fail hua, rule engine + LLM se aage badh rahe hain]")
+
+    # 2. Final recommendation
     prompt = (
         f"Crop: {crop}\nSoil: {soil}\nPlot size: {acres:g} acres\n"
         f"Photo analysis: {analysis.model_dump_json()}\n"
         f"Rule-engine shortlist (ONLY these allowed): {shortlist['equipment']}\n"
-        f"Rule-engine notes: {shortlist['notes']}\n\n"
-        "Task: order the shortlisted equipment in working sequence, write short practical "
-        "steps for an Indian farmer, explain the reasoning, and list warnings (include every "
-        "rule-engine note). Do NOT add equipment outside the shortlist and do NOT state "
-        "tractor HP or hours (they are computed separately). Do not invent facts. "
-        "Lower the confidence if photo confidence is low or details are missing."
+        f"Rule-engine notes: {shortlist['notes']}\n"
+        f"Web research notes (from RAG/agent, may be empty): {notes or 'none'}\n\n"
+        "Task: order the shortlisted equipment in working sequence, write short practical steps for an "
+        "Indian farmer, explain the reasoning, and list warnings (include every rule-engine note). Use the "
+        "research notes to make steps and warnings specific, but never contradict the shortlist. Do NOT add "
+        "equipment outside the shortlist and do NOT state tractor HP or hours (computed separately). "
+        "Do not invent facts. Lower the confidence if photo confidence is low or data is missing."
     )
     try:
         out = _llm.invoke(prompt)
@@ -66,4 +80,6 @@ def recommend(analysis, shortlist: dict, soil: str, acres: float, crop: str) -> 
         confidence=conf,
         tractor_hp_range=shortlist["tractor_hp_range"],
         estimated_time_hours=shortlist["estimated_time_hours"],
+        sources=sources,
+        tools_used=tools_used,
     )

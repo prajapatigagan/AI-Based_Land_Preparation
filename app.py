@@ -8,9 +8,9 @@ import streamlit as st
 
 from tools import UNIT_TO_ACRE, to_acres, rule_shortlist
 from vision import analyze_land, merge_analyses
-from recommender import recommend
+from recommender_rag import recommend
 from pdf_report import build_pdf
-from chatbot import build_context, stream_answer
+from chatbot_rag import build_context, stream_answer
 from tractor_web import get_tractor_examples, fmt_hp, format_price
 
 # ---------------- PAGE CONFIG ----------------
@@ -298,7 +298,7 @@ def generate(uploaded, soil, crop, size, unit):
             else:
                 st.write("⚙️ Matching soil, crop and land condition")
                 shortlist = rule_shortlist(analysis, soil, acres, crop)
-                st.write("📝 Writing the preparation plan")
+                st.write("🤖 Agent researching web sources (RAG) and writing the plan")
                 result = recommend(analysis, shortlist, soil, acres, crop)
                 st.write("🌐 Searching the web for tractor examples")
                 tractors = get_tractor_examples(result.tractor_hp_range)
@@ -444,6 +444,16 @@ def render_report(rep):
         mime="application/pdf",
     )
 
+    if getattr(result, "tools_used", None):
+        st.markdown("#### How the AI agent researched this")
+        st.markdown(
+            f'<div class="logic-card">Tools used by the agent: <b>{esc(", ".join(result.tools_used))}</b></div>',
+            unsafe_allow_html=True,
+        )
+    if getattr(result, "sources", None):
+        st.markdown("#### Sources (retrieved via RAG)")
+        links = "".join(f'<li><a href="{esc(u)}" target="_blank">{esc(u)}</a></li>' for u in result.sources)
+        st.markdown(f'<div class="logic-card"><ul>{links}</ul></div>', unsafe_allow_html=True)
 
 # ---------------- TOP BAR + HERO ----------------
 st.markdown(

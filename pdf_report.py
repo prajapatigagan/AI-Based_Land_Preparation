@@ -63,13 +63,20 @@ def build_pdf(buf, inputs, analysis, result, tractors):
             line = f"{t['brand']} {t['model']} - {fmt_hp(t['hp'])} HP - {format_price(t)}"
             s.append(_p(line))
             if t.get("source_url"):
-                s.append(_p(f"Source: {t['source_url']} (checked {t.get('source_checked_on','')})", SMALL))
+                s.append(_p(f"Source: {t['source_url']} (checked {t.get('source_checked_on', '')})", SMALL))
         s.append(_p("Prices can change; confirm with a local dealer.", SMALL))
 
     if result.warnings:
         s += [_p("Warnings", H2)] + [_p(f"- {w}") for w in result.warnings]
 
     s += [_p("Why this recommendation", H2), _p(result.reasoning), Spacer(1, 8)]
+
+    if getattr(result, "tools_used", None):
+        s += [_p("AI agent tools used", H2), _p(", ".join(result.tools_used))]
+    if getattr(result, "sources", None):
+        s += [_p("Sources (retrieved via RAG)", H2)] + [_p(u, SMALL) for u in result.sources]
+
+    s.append(Spacer(1, 8))
     s.append(_p("Always confirm with your local agronomist before hiring machinery. "
                 "Time and HP are estimates based on plot size and standard implement speeds.", SMALL))
     doc.build(s)
