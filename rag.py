@@ -6,8 +6,13 @@ import numpy as np
 import requests
 from bs4 import BeautifulSoup
 from langchain_community.tools import DuckDuckGoSearchResults
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
-_search = DuckDuckGoSearchResults(output_format="list", num_results=5)
+_search = DuckDuckGoSearchResults(
+    api_wrapper=DuckDuckGoSearchAPIWrapper(region="in-en"),
+    output_format="list",
+    num_results=5,
+)
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
 _BLOCKED = ("youtube.com", "facebook.com", "instagram.com", "pinterest.com",
             "twitter.com", "x.com", "linkedin.com", "quora.com", "reddit.com")
