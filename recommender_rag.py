@@ -60,6 +60,9 @@ def recommend(analysis, shortlist: dict, soil: str, acres: float, crop: str) -> 
         "Use implement names EXACTLY as in the shortlist; never mention implements outside it "
         "(e.g. no harrowing if Disc harrow is not listed) and never describe an implement as something "
         "it is not (a planker is a simple leveling plank, not laser-guided)."
+        "Write exactly one step per equipment item, in the same order, plus at most 2 short "
+        "preparation/check steps. Never repeat an implement in more than one step. "
+        "List only warnings that are relevant to THIS plot; no generic filler."
     )
     try:
         out = _llm.invoke(prompt)
