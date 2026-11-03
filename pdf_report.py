@@ -15,10 +15,23 @@ H2 = ParagraphStyle("H2", parent=_ss["Heading2"], textColor=GREEN, spaceBefore=1
 BODY = ParagraphStyle("B", parent=_ss["BodyText"], fontSize=10, leading=14)
 SMALL = ParagraphStyle("S", parent=BODY, fontSize=8, textColor=colors.grey)
 
+# Helvetica ke unsupported special characters ko safe characters me badalte hain
+_REPL = {
+    "\u2011": "-", "\u2010": "-", "\u2013": "-", "\u2014": "-", "\u2212": "-",
+    "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+    "\u2022": "-", "\u00a0": " ", "\u2192": "->", "\u2248": "~", "\u20b9": "Rs. ",
+}
+
+
+def _clean(text) -> str:
+    text = str(text)
+    for k, v in _REPL.items():
+        text = text.replace(k, v)
+    return text.encode("cp1252", "replace").decode("cp1252")  # baaki unsupported chars -> '?'
+
 
 def _p(text, style=BODY):
-    # Helvetica me rupee symbol nahi hota
-    return Paragraph(escape(str(text)).replace("₹", "Rs. "), style)
+    return Paragraph(escape(_clean(text)), style)
 
 
 def _table(rows):

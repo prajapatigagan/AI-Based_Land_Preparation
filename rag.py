@@ -15,7 +15,13 @@ _search = DuckDuckGoSearchResults(
 )
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
 _BLOCKED = ("youtube.com", "facebook.com", "instagram.com", "pinterest.com",
-            "twitter.com", "x.com", "linkedin.com", "quora.com", "reddit.com")
+            "twitter.com", "x.com", "linkedin.com", "quora.com", "reddit.com",
+            "muskegvalleyrabbitry.com")  # IRRI content copy karne wali spam site
+
+# Trusted agri/government/research sites ko pehle rakhte hain
+_TRUSTED = (".gov.in", ".nic.in", ".ac.in", ".edu", "irri.org", "fao.org",
+            "icar.org.in", "krishi", "agri", "kvk")
+
 CHUNK, OVERLAP = 900, 150
 
 _model = None
@@ -36,6 +42,12 @@ def _embed(texts: list[str]) -> np.ndarray:
 def _blocked(url: str) -> bool:
     host = urlparse(url).netloc.lower().removeprefix("www.")
     return any(host == b or host.endswith("." + b) for b in _BLOCKED)
+
+
+def _trust(hit: dict) -> int:
+    """0 = trusted site (pehle), 1 = baaki. sorted() stable hai, to baaki ka order same rehta hai."""
+    host = urlparse(hit["link"]).netloc.lower()
+    return 0 if any(t in host for t in _TRUSTED) else 1
 
 
 def _fetch(hit: dict) -> dict:
@@ -87,7 +99,7 @@ def build_kb(queries: list[str], max_pages: int = 8) -> KB:
             if u and u not in seen and not _blocked(u):
                 seen.add(u)
                 hits.append(r)
-    hits = hits[:max_pages]
+    hits = sorted(hits, key=_trust)[:max_pages]  # trusted sites pehle
 
     with ThreadPoolExecutor(6) as ex:
         pages = list(ex.map(_fetch, hits))

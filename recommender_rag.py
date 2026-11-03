@@ -53,8 +53,7 @@ def recommend(analysis, shortlist: dict, soil: str, acres: float, crop: str) -> 
         f"Rule-engine shortlist (ONLY these allowed): {shortlist['equipment']}\n"
         f"Rule-engine notes: {shortlist['notes']}\n"
         f"Web research notes (from RAG/agent, may be empty): {notes or 'none'}\n\n"
-        "Task: order the shortlisted equipment in working sequence, write short practical steps for an "
-        "Indian farmer, explain the reasoning, and list warnings (include every rule-engine note). Use the "
+        "Task: the shortlist is ALREADY in the correct working order; keep that EXACT order in the steps. Write short practical steps for an "        "Indian farmer, explain the reasoning, and list warnings (include every rule-engine note). Use the "
         "research notes to make steps and warnings specific, but never contradict the shortlist. Do NOT add "
         "equipment outside the shortlist and do NOT state tractor HP or hours (computed separately). "
         "Do not invent facts. Lower the confidence if photo confidence is low or data is missing. "
@@ -64,8 +63,7 @@ def recommend(analysis, shortlist: dict, soil: str, acres: float, crop: str) -> 
     )
     try:
         out = _llm.invoke(prompt)
-        allowed = set(shortlist["equipment"])
-        equipment = [e for e in out.equipment if e in allowed] or shortlist["equipment"]
+        equipment = list(shortlist["equipment"])  # order rule engine ka final
         steps, reasoning, warnings, llm_conf = out.steps, out.reasoning, out.warnings, out.confidence
     except Exception:
         traceback.print_exc()
